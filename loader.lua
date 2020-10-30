@@ -131,10 +131,10 @@ local function mergeStates(obj1, obj2, onFullySpawned)
     obj['States']['2'] = JSON.decode(obj2.getJSON())
     local new = spawnObjectJSON({
         json = JSON.encode(obj),
-        function(obj)
+        callback_function = (function(obj)
             onFullySpawned(obj)
             print("k . . .")
-        end
+        end)
     })
     destroyObject(obj1)
     destroyObject(obj2)
