@@ -28,8 +28,6 @@ SIDEBOARD_POSITION_OFFSET = {-1.47, 0.2, 0.1286}
 COMMANDER_POSITION_OFFSET = {0.7286, 0.2, -0.8257}
 TOKENS_POSITION_OFFSET = {-0.7286, 0.2, -0.8257}
 
-DEFAULT_CARDBACK = "https://gamepedia.cursecdn.com/mtgsalvation_gamepedia/f/f8/Magic_card_back.jpg?version=0ddc8d41c3b69c2c3c4bb5d72669ffd7"
-
 ------ GLOBAL STATE
 lock = false
 playerColor = nil
@@ -119,11 +117,27 @@ local function spawnCard(face, position, flipped, onFullySpawned)
             obj.setDescription(face.oracleText)
             obj.setCustomObject({
                 face = face.imageURI,
-                back = getCardBackInputValue()
+                back = "https://gamepedia.cursecdn.com/mtgsalvation_gamepedia/f/f8/Magic_card_back.jpg?version=0ddc8d41c3b69c2c3c4bb5d72669ffd7"
             })
             onFullySpawned(obj)
         end)
     })
+end
+
+local function mergeStates(obj1, obj2, onFullySpawned)
+    local obj = JSON.decode(obj1.getJSON())
+    print("merge"..obj1.getName().." with "..obj2.getName())
+    obj['States'] = {}
+    obj['States']['2'] = JSON.decode(obj2.getJSON())
+    local new = spawnObjectJSON({
+        json = JSON.encode(obj),
+        function(obj)
+            onFullySpawned(obj)
+            print("k . . .")
+        end
+    })
+    destroyObject(obj1)
+    destroyObject(obj2)
 end
 
 -- Spawns a deck named [name] containing the given [cards] at [position].
@@ -146,12 +160,29 @@ local function spawnDeck(cards, name, position, flipped, onFullySpawned, onError
                 }}
             end
 
-            for _, face in ipairs(card.faces) do
-                incSem()
-                spawnCard(face, position, flipped, function(obj)
-                    table.insert(cardObjects, obj)
-                    decSem()
-                end)
+            incSem()
+            if card.faces[2] == nil then
+                spawnCard(card.faces[1], position, flipped, function(obj)
+                      table.insert(cardObjects, obj)
+                      decSem()
+                  end)
+            else
+                local card1 = spawnCard(card.faces[1], position, flipped, function(obj) end)
+                local card2 = spawnCard(card.faces[2], position, flipped, function(obj) end)
+                Wait.condition(
+                    function()
+                        mergeStates(card1, card2, function(obj)
+                          print("here")
+                              table.insert(cardObjects, obj)
+                              decSem()
+                          end)
+                    end,
+                    function() return (not card1.spawning and not card2.spawning) end,
+                    2,
+                    function()
+                        onError("Error building doublefaced card... timed out.")
+                    end
+                )
             end
         end
     end
@@ -485,7 +516,7 @@ local function queryDeckNotebook(_, onSuccess, onError)
                 else
                     count = 1
                 end
-        
+
                 local name, setCode, collectorNum = string.match(line, "([^%(%)]+) %(([%d%l%u]+)%) ([%d%l%u]+)")
 
                 if not name then
@@ -858,19 +889,6 @@ local function drawUI()
         value = "",
     })
 
-    self.createInput({
-        input_function = "onGetCardBackInput",
-        function_owner = self,
-        label          = "Enter card back URL",
-        alignment      = 2,
-        position       = {x=0, y=0.1, z=1.78},
-        width          = 2000,
-        height         = 100,
-        font_size      = 60,
-        validation     = 1,
-        value = "",
-    })
-
     self.createButton({
         click_function = "onLoadDeckURLButton",
         function_owner = self,
@@ -898,7 +916,6 @@ local function drawUI()
         font_color     = {r=1, b=1, g=1},
         tooltip        = "Click to load deck from notebook",
     })
-
 end
 
 function getDeckInputValue()
@@ -912,19 +929,6 @@ function getDeckInputValue()
 end
 
 function onLoadDeckInput(_, _, _) end
-
-function getCardBackInputValue()
-    for i, input in pairs(self.getInputs()) do
-        if input.label == "Enter card back URL" then
-            local back = trim(input.value)
-            if back ~= "" then return back end
-        end
-    end
-
-    return DEFAULT_CARDBACK
-end
-
-function onGetCardBackInput(_, _, _) end
 
 function onLoadDeckURLButton(_, pc, _)
     if lock then
